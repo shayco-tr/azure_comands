@@ -1,0 +1,132 @@
+#!/bin/bash
+
+# Create a resource group.
+az resource create --name shay-azure --location eastus \
+
+# Create a network group
+az network vnet create \
+--resource-group shay-azure \
+--name myVNet1 \
+--address-prefixes 10.1.0.0/16 \
+--subnet-name sbunet_azure1 \
+--subnet-prefixes 10.1.0.0/24
+
+# Create a public IP address
+az network public-ip create \
+    --resource-group  shay-azure \
+    --name publod \
+    --sku Standard
+
+# Create a netwrok security group
+  az network nsg create \
+    --resource-group shay-azure \
+    --name myNSG
+
+# Create rules- netwrok security group for APP
+  az network nsg rule create \
+    --resource-group shay-azure \
+    --nsg-name myNSG \
+    --name APPNSGRuleHTTP \
+    --protocol '*' \
+    --direction inbound \
+    --source-address-prefix '34.99.159.243/32' \
+    --source-port-range '*' \
+    --destination-address-prefix '*' \
+    --destination-port-range 8080 \
+    --access allow \
+    --priority 200
+
+# Create rules- netwrok security group for ssh
+  az network nsg rule create \
+    --resource-group shay-azure \
+    --nsg-name myNSG \
+    --name SSHNSGRule \
+    --protocol '*' \
+    --direction inbound \
+    --source-address-prefix '34.99.159.243/32' \
+    --source-port-range '*' \
+    --destination-address-prefix '*' \
+    --destination-port-range 22 \
+    --access allow \
+    --priority 201
+
+ 
+ ## Create two newwork cards
+   array=(myNicVM1 myNicVM2)
+  for vmnic in "${array[@]}"
+  do
+    az network nic create \
+        --resource-group shay-azure \
+        --name $vmnic \
+        --vnet-name azure1 \
+        --subnet sbunet_azure1 \
+        --network-security-group myNSG
+  done
+
+  ## create one vm
+    az vm create \
+    --resource-group shay-azure \
+    --name AZUREVM1 \
+    --nics myNicVM1 \
+    --image  UbuntuLTS \
+    --admin-username shay \
+    --ssh-key-values /home/shay/.ssh/id_rsa.pub \
+    --zone 1 \
+    --no-wait
+  ## create second vm
+    az vm create \
+    --resource-group shay-azure \
+    --name AZUREVM2 \
+    --nics myNicVM2 \
+    --image  UbuntuLTS \
+    --admin-username shay \
+    --ssh-key-values /home/shay/.ssh/id_rsa.pub \
+    --zone 2 \
+    --no-wait
+
+
+## create lb
+az network lb create \
+    --resource-group shay-azure \
+    --name shayLoadBalancer \
+    --sku Standard \
+    --frontend-ip-name myFrontEndPool \
+    --backend-pool-name myBackEndPool \
+    --public-ip-address publod
+
+az network lb probe create \
+    --resource-group shay-azure \
+    --lb-name shayLoadBalancer \
+    --name myHealthProbe \
+    --protocol tcp \
+    --port 8080
+
+
+ az network lb rule create \
+    --resource-group shay-azure \
+    --lb-name asafLoadBalancer \
+    --name myHTTPRule \
+    --protocol tcp \
+    --frontend-port 80 \
+    --backend-port 8080 \
+    --frontend-ip-name myFrontEndPool \
+    --backend-pool-name myBackEndPool \
+    --probe-name myHealthProbe \
+    --disable-outbound-snat true \
+    --idle-timeout 15 \
+    --enable-tcp-reset true
+
+az network nic ip-config address-pool add \
+     --address-pool myBackendPool \
+     --ip-config-name ipconfigshayVM1 \
+     --nic-name myNicVM1 \
+     --resource-group shay-azure \
+     --lb-name shayLoadBalancer
+
+az network nic ip-config address-pool add \
+     --address-pool myBackendPool \
+     --ip-config-name ipconfigshayVM2 \
+     --nic-name myNicVM2 \
+     --resource-group shay-azure \
+     --lb-name shayLoadBalancer
+ 
